@@ -34,51 +34,46 @@ namespace ClingoDL {
 
 #define CLINGO_CALL(x) Clingo::Detail::handle_error(x)
 
-template <typename T>
 bool init(clingo_propagate_init_t* i, void* data)
 {
     CLINGODL_TRY {
         PropagateInit in(i);
-        static_cast<DifferenceLogicPropagator<T>*>(data)->init(in);
+        static_cast<DifferenceLogicPropagator*>(data)->init(in);
     }
     CLINGODL_CATCH;
 }
 
-template <typename T>
 bool propagate(clingo_propagate_control_t* i, const clingo_literal_t *changes, size_t size, void* data)
 {
     CLINGODL_TRY {
         PropagateControl in(i);
-        static_cast<DifferenceLogicPropagator<T>*>(data)->propagate(in, {changes, size});
+        static_cast<DifferenceLogicPropagator*>(data)->propagate(in, {changes, size});
     }
     CLINGODL_CATCH;
 }
 
 #if CLINGO_VERSION_MAJOR*1000 + CLINGO_VERSION_MINOR >= 5005
-template <typename T>
 void undo(clingo_propagate_control_t const* i, const clingo_literal_t *changes, size_t size, void* data)
 {
     PropagateControl in(const_cast<clingo_propagate_control_t *>(i));
-    static_cast<DifferenceLogicPropagator<T>*>(data)->undo(in, {changes, size});
+    static_cast<DifferenceLogicPropagator*>(data)->undo(in, {changes, size});
 }
 #else
-template <typename T>
 bool undo(clingo_propagate_control_t const* i, const clingo_literal_t *changes, size_t size, void* data)
 {
     CLINGODL_TRY {
         PropagateControl in(const_cast<clingo_propagate_control_t *>(i));
-        static_cast<DifferenceLogicPropagator<T>*>(data)->undo(in, {changes, size});
+        static_cast<DifferenceLogicPropagator*>(data)->undo(in, {changes, size});
     }
     CLINGODL_CATCH;
 }
 #endif
 
-template <typename T>
 bool check(clingo_propagate_control_t* i, void* data)
 {
     CLINGODL_TRY {
         PropagateControl in(i);
-        static_cast<DifferenceLogicPropagator<T>*>(data)->check(in);
+        static_cast<DifferenceLogicPropagator*>(data)->check(in);
     }
     CLINGODL_CATCH;
 }
@@ -95,22 +90,11 @@ public:
     virtual void on_statistics(UserStatistics& step, UserStatistics &accu) = 0;
 };
 
-template<typename T>
-void set_value(clingodl_value_t *variant, T value);
-
-template<>
-void set_value<int>(clingodl_value_t *variant, int value) {
+void set_value(clingodl_value_t *variant, int value) {
     variant->type = clingodl_value_type_int;
     variant->int_number = value;
 }
 
-template<>
-void set_value<double>(clingodl_value_t *variant, double value) {
-    variant->type = clingodl_value_type_double;
-    variant->double_number = value;
-}
-
-template<typename T>
 class DLPropagatorFacade : public PropagatorFacade {
 public:
     DLPropagatorFacade(clingo_control_t *ctl, PropagatorConfig const &conf)
@@ -128,10 +112,10 @@ term {
 &show_assignment/0 : term, directive
 }.)"));
         static clingo_propagator_t prop = {
-            init<T>,
-            propagate<T>,
-            undo<T>,
-            check<T>,
+            init,
+            propagate,
+            undo,
+            check,
             nullptr
         };
         CLINGO_CALL(clingo_control_register_propagator(ctl, &prop, &prop_, false));
@@ -201,7 +185,7 @@ term {
 private:
     Stats step_;
     Stats accu_;
-    DifferenceLogicPropagator<T> prop_;
+    DifferenceLogicPropagator prop_;
 };
 
 } // namespace ClingoDL
@@ -211,7 +195,6 @@ using namespace ClingoDL;
 struct clingodl_theory {
     std::unique_ptr<PropagatorFacade> clingodl{nullptr};
     PropagatorConfig config;
-    bool rdl;
     bool shift_constraints{true};
 };
 
@@ -222,12 +205,7 @@ extern "C" bool clingodl_create(clingodl_theory_t **theory) {
 
 extern "C" bool clingodl_register(clingodl_theory_t *theory, clingo_control_t* ctl) {
     CLINGODL_TRY {
-        if (!theory->rdl) {
-            theory->clingodl = std::make_unique<DLPropagatorFacade<int>>(ctl, theory->config);
-        }
-        else {
-            theory->clingodl = std::make_unique<DLPropagatorFacade<double>>(ctl, theory->config);
-        }
+        theory->clingodl = std::make_unique<DLPropagatorFacade>(ctl, theory->config);
     }
     CLINGODL_CATCH;
 }
@@ -387,9 +365,6 @@ extern "C" bool clingodl_configure(clingodl_theory_t *theory, char const *key, c
         if (strcmp(key, "sort-edges") == 0) {
             return check_parse("sort-edges", parse_sort(value, &theory->config));
         }
-        if (strcmp(key, "rdl") == 0) {
-            return check_parse("rdl", parse_bool(value, &theory->rdl));
-        }
         std::ostringstream msg;
         msg << "invalid configuration key '" << key << "'";
         clingo_set_error(clingo_error_runtime, msg.str().c_str());
@@ -426,7 +401,6 @@ extern "C" bool clingodl_register_options(clingodl_theory_t *theory, clingo_opti
             "        potential          : Sort by relative potential\n"
             "        potential-reversed : Sort by relative negative potential",
             &parse_sort, &theory->config, true, "<arg>"));
-        CLINGO_CALL(clingo_options_add_flag(options, group, "rdl", "Enable support for real numbers", &theory->rdl));
     }
     CLINGODL_CATCH;
 }

@@ -156,27 +156,13 @@ TEST_CASE("solving", "[clingo]") {
             REQUIRE(result == (ResultVec{{{{a, -1}},{a, c}},{{{a, 0}},{a}}}));
 
         }
-        SECTION("rdl") {
-            REQUIRE(clingodl_configure(theory, "rdl", "yes"));
-            REQUIRE(clingodl_register(theory, ctl.to_c()));
-
-            parse_program(theory, ctl,
-                "#program base.\n"
-                "&diff { a } >= \"0.5\" * 3.\n"
-                );
-            ctl.ground({{"base", {}}});
-            REQUIRE(clingodl_prepare(theory, ctl.to_c()));
-
-            auto result = solve(theory, ctl);
-            REQUIRE(result == (ResultVec{{{{a, 1.5}},{}}}));
-        }
 
         SECTION("parse") {
             REQUIRE(clingodl_register(theory, ctl.to_c()));
 
             parse_program(theory, ctl,
                 "#program base.\n"
-                "&diff { p( 1 + 2 ) - q( 3 * 4 - 7 ) } <= 3 - \"9.0\".\n"
+                "&diff { p( 1 + 2 ) - q( 3 * 4 - 7 ) } <= 3 - 9.\n"
                 );
             ctl.ground({{"base", {}}});
             REQUIRE(clingodl_prepare(theory, ctl.to_c()));

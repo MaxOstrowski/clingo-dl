@@ -213,82 +213,63 @@ private:
 // - https://wiki.sei.cmu.edu/confluence/display/c/INT32-C.+Ensure+that+operations+on+signed+integers+do+not+result+in+overflow
 
 //! Safely add a and b throwing an exception in case of overflow/underflow.
-template <typename Int, typename std::enable_if<std::is_integral<Int>::value, int>::type = 0> 
-Int safe_add(Int a, Int b) {
+inline int safe_add(int a, int b) {
     if (b > 0) {
-        if (a > std::numeric_limits<Int>::max() - b) {
+        if (a > std::numeric_limits<int>::max() - b) {
             throw std::overflow_error("integer overflow");
         }
     }
     else if (b < 0) {
-        if (a < std::numeric_limits<Int>::min() - b) {
+        if (a < std::numeric_limits<int>::min() - b) {
             throw std::underflow_error("integer underflow");
         }
     }
     return a + b;
 }
 
-template <typename Float, typename std::enable_if<std::is_floating_point<Float>::value, int>::type = 0>
-Float safe_add(Float a, Float b) {
-	return a + b; 
-}
-
 //! Safely subtract a and b throwing an exception in case of
 //! overflow/underflow.
-template <typename Int, typename std::enable_if<std::is_integral<Int>::value, int>::type = 0> 
-Int safe_sub(Int a, Int b) {
+inline int safe_sub(int a, int b) {
     if (b > 0) {
-        if (a < std::numeric_limits<Int>::min() + b) {
+        if (a < std::numeric_limits<int>::min() + b) {
             throw std::underflow_error("integer underflow");
         }
     }
     else if (b < 0) {
-        if (a > std::numeric_limits<Int>::max() + b) {
+        if (a > std::numeric_limits<int>::max() + b) {
             throw std::overflow_error("integer overflow");
         }
     }
     return a - b;
 }
 
-template <typename Float, typename std::enable_if<std::is_floating_point<Float>::value, int>::type = 0>
-Float safe_sub(Float a, Float b) {
-	return a - b; 
-}
-
 //! Safely multiply a and b throwing an exception in case of
 //! overflow/underflow.
-template <typename Int, typename std::enable_if<std::is_integral<Int>::value, int>::type = 0> 
-Int safe_mul(Int a, Int b) {
+inline int safe_mul(int a, int b) {
     if (a > 0) {
         if (b > 0) {
-            if (a > (std::numeric_limits<Int>::max() / b)) {
+            if (a > (std::numeric_limits<int>::max() / b)) {
                 throw std::overflow_error("integer overflow");
             }
         }
-        else if (b < (std::numeric_limits<Int>::min() / a)) {
+        else if (b < (std::numeric_limits<int>::min() / a)) {
             throw std::underflow_error("integer underflow");
         }
     } else {
         if (b > 0) {
-            if (a < (std::numeric_limits<Int>::min() / b)) {
+            if (a < (std::numeric_limits<int>::min() / b)) {
                 throw std::underflow_error("integer underflow");
             }
-        } else if (a < 0 && b < (std::numeric_limits<Int>::max() / a)) {
+        } else if (a < 0 && b < (std::numeric_limits<int>::max() / a)) {
             throw std::overflow_error("integer overflow");
         }
     }
     return a * b;
 }
 
-template <typename Float, typename std::enable_if<std::is_floating_point<Float>::value, int>::type = 0>
-Float safe_mul(Float a, Float b) {
-	return a * b; 
-}
-
 //! Safely divide a and b throwing an exception in case of overflow/underflow.
-template <typename Int, typename std::enable_if<std::is_integral<Int>::value, int>::type = 0> 
-Int safe_div(Int a, Int b) {
-    if (a == std::numeric_limits<Int>::min() && b == -1) {
+inline int safe_div(int a, int b) {
+    if (a == std::numeric_limits<int>::min() && b == -1) {
         throw std::overflow_error("integer overflow");
     }
     if (b == 0) {
@@ -300,17 +281,10 @@ Int safe_div(Int a, Int b) {
     return a / b;
 }
 
-template <typename Float, typename std::enable_if<std::is_floating_point<Float>::value, int>::type = 0>
-Float safe_div(Float a, Float b) {
-	return a / b; 
-}
-
-
 //! Safely calculate the modulo of a and b throwing an exception in case of
 //! overflow/underflow.
-template <typename Int, typename std::enable_if<std::is_integral<Int>::value, int>::type = 0> 
-Int safe_mod(Int a, Int b) {
-    if (a == std::numeric_limits<Int>::min() && b == -1) {
+inline int safe_mod(int a, int b) {
+    if (a == std::numeric_limits<int>::min() && b == -1) {
         throw std::overflow_error("integer overflow");
     }
     if (b == 0) {
@@ -322,46 +296,26 @@ Int safe_mod(Int a, Int b) {
     return a % b;
 }
 
-template <typename Float, typename std::enable_if<std::is_floating_point<Float>::value, int>::type = 0>
-Float safe_mod(Float a, Float b) {
-	return fmod(a,b); 
-}
-
 //! Safely invert a throwing an exception in case of an underflow.
-template <typename Int, typename std::enable_if<std::is_integral<Int>::value, int>::type = 0> 
-Int safe_inv(Int a) {
-    if (a == std::numeric_limits<Int>::min()) {
+inline int safe_inv(int a) {
+    if (a == std::numeric_limits<int>::min()) {
         throw std::overflow_error("integer overflow");
     }
     return -a;
 }
 
-template <typename Float, typename std::enable_if<std::is_floating_point<Float>::value, int>::type = 0>
-Float safe_inv(Float a) {
-	return -a; 
-}
-
-template <typename Int, typename std::enable_if<std::is_integral<Int>::value, int>::type = 0> 
-Int safe_pow(Int a, Int b) {
+inline int safe_pow(int a, int b) {
     if (a == 0) {
         throw std::overflow_error("integer overflow");
     }
     auto ret = std::pow(static_cast<double>(a), b);
-    if (ret > std::numeric_limits<Int>::max()) {
+    if (ret > std::numeric_limits<int>::max()) {
         throw std::overflow_error("integer overflow");
     }
-    if (ret < std::numeric_limits<Int>::min()) {
+    if (ret < std::numeric_limits<int>::min()) {
         throw std::underflow_error("integer underflow");
     }
-    return static_cast<Int>(ret);
+    return static_cast<int>(ret);
 }
-
-template <typename Float, typename std::enable_if<std::is_floating_point<Float>::value, int>::type = 0>
-Float safe_pow(Float a, Float b) {
-	return std::pow(a,b); 
-}
-
-
-
 
 #endif // CLINGODL_UTIL_HH

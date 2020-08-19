@@ -57,18 +57,18 @@ char const *negate_relation(char const *op);
 
 void transform(Clingo::AST::Statement &&stm, Clingo::StatementCallback const &cb, bool shift);
 
-template <typename T>
 struct Edge {
     int from;
     int to;
-    T weight;
+    int weight;
     literal_t lit;
 };
 
-template <class T, class P>
+
+template <class P>
 struct HeapFromM {
     int &offset(int idx) { return static_cast<P *>(this)->nodes_[idx].offset; }
-    T &cost(int idx) { return static_cast<P *>(this)->nodes_[idx].cost_from; }
+    int &cost(int idx) { return static_cast<P *>(this)->nodes_[idx].cost_from; }
     int to(int idx) { return static_cast<P *>(this)->edges_[idx].to; }
     int from(int idx) { return static_cast<P *>(this)->edges_[idx].from; }
     std::vector<int> &out(int idx) { return static_cast<P *>(this)->nodes_[idx].outgoing; }
@@ -83,10 +83,10 @@ struct HeapFromM {
     uint64_t &propagation_cost() {return static_cast<P *>(this)->stats_.propagate_cost_from; }
 };
 
-template <class T, class P>
+template <class P>
 struct HeapToM {
     int &offset(int idx) { return static_cast<P *>(this)->nodes_[idx].offset; }
-    T &cost(int idx) { return static_cast<P *>(this)->nodes_[idx].cost_to; }
+    int &cost(int idx) { return static_cast<P *>(this)->nodes_[idx].cost_to; }
     int to(int idx) { return static_cast<P *>(this)->edges_[idx].from; }
     int from(int idx) { return static_cast<P *>(this)->edges_[idx].to; }
     std::vector<int> &out(int idx) { return static_cast<P *>(this)->nodes_[idx].incoming; }
@@ -101,17 +101,16 @@ struct HeapToM {
     uint64_t &propagation_cost() {return static_cast<P *>(this)->stats_.propagate_cost_to; }
 };
 
-template <typename T>
 struct DifferenceLogicNode {
     bool defined() const { return !potential_stack.empty(); }
-    T potential() const { return potential_stack.back().second; }
+    int potential() const { return potential_stack.back().second; }
     std::vector<int> outgoing;
     std::vector<int> incoming;
     std::vector<int> candidate_incoming;
     std::vector<int> candidate_outgoing;
-    std::vector<std::pair<int, T>> potential_stack; // [(level,potential)]
-    T cost_from = 0;
-    T cost_to = 0;
+    std::vector<std::pair<int, int>> potential_stack; // [(level,potential)]
+    int cost_from = 0;
+    int cost_to = 0;
     int offset = 0;
     int path_from = 0;
     int path_to = 0;
@@ -207,15 +206,14 @@ struct PropagatorConfig {
 };
 
 
-template <typename T>
-class DifferenceLogicGraph : private HeapToM<T, DifferenceLogicGraph<T>>, private HeapFromM<T, DifferenceLogicGraph<T>> {
-    using HTM = HeapToM<T, DifferenceLogicGraph<T>>;
-    using HFM = HeapFromM<T, DifferenceLogicGraph<T>>;
-    friend struct HeapToM<T, DifferenceLogicGraph<T>>;
-    friend struct HeapFromM<T, DifferenceLogicGraph<T>>;
+class DifferenceLogicGraph : private HeapToM<DifferenceLogicGraph>, private HeapFromM<DifferenceLogicGraph> {
+    using HTM = HeapToM<DifferenceLogicGraph>;
+    using HFM = HeapFromM<DifferenceLogicGraph>;
+    friend struct HeapToM<DifferenceLogicGraph>;
+    friend struct HeapFromM<DifferenceLogicGraph>;
 
 public:
-    DifferenceLogicGraph(DLStats &stats, const std::vector<Edge<T>> &edges, PropagationMode propagate)
+    DifferenceLogicGraph(DLStats &stats, const std::vector<Edge> &edges, PropagationMode propagate)
         : edges_(edges)
         , propagate_(propagate)
         , stats_(stats) {
@@ -231,7 +229,7 @@ public:
     int node_value_defined(int idx) const { return nodes_[idx].defined(); }
     bool has_value(int idx) const { return valid_node(idx) && node_value_defined(idx); }
 
-    T node_value(int idx) const { return -nodes_[idx].potential(); }
+    int node_value(int idx) const { return -nodes_[idx].potential(); }
 
     bool edge_is_active(int edge_idx) const { return edge_states_[edge_idx].active; }
 
@@ -373,7 +371,7 @@ public:
                 next_idx = edges_[next.path_from].from;
             }
 #ifdef CROSSCHECK
-            T weight = 0;
+            int weight = 0;
             for (auto &edge_idx : neg_cycle) {
                 weight += edges_[edge_idx].weight;
             }
@@ -585,7 +583,7 @@ private:
                 ++stats_.false_edges;
                 if (!ctl.assignment().is_false(uv.lit)) {
 #ifdef CROSSCHECK
-                    T sum = uv.weight - xy.weight;
+                    int sum = uv.weight - xy.weight;
 #endif
                     std::vector<literal_t> clause;
                     clause.push_back(-uv.lit);
@@ -750,8 +748,8 @@ private:
     }
 
 #ifdef CROSSCHECK
-    std::unordered_map<int, T> bellman_ford(std::vector<int> const &edges, int source) {
-        std::unordered_map<int, T> costs;
+    std::unordered_map<int, int> bellman_ford(std::vector<int> const &edges, int source) {
+        std::unordered_map<int, int> costs;
         costs[source] = 0;
         int nodes = 0;
         for (auto &node : nodes_) {
@@ -790,7 +788,7 @@ private:
     }
 #endif
 
-    void set_potential(DifferenceLogicNode<T> &node, int level, T potential) {
+    void set_potential(DifferenceLogicNode &node, int level, int potential) {
         if (!node.defined() || node.potential_stack.back().first < level) {
             node.potential_stack.emplace_back(level, potential);
             changed_nodes_.emplace_back(numeric_cast<int>(&node - nodes_.data()));
@@ -809,8 +807,8 @@ private:
     Heap<4> costs_heap_;
     std::vector<int> visited_from_;
     std::vector<int> visited_to_;
-    std::vector<Edge<T>> const &edges_;
-    std::vector<DifferenceLogicNode<T>> nodes_;
+    std::vector<Edge> const &edges_;
+    std::vector<DifferenceLogicNode> nodes_;
     std::vector<int> changed_nodes_;
     std::vector<int> changed_edges_;
     std::vector<std::tuple<int, int, int, int, bool>> changed_trail_;
@@ -858,19 +856,17 @@ struct FactState {
     size_t limit{0};
 };
 
-template <typename T>
 struct DLState {
-    DLState(DLStats &stats, const std::vector<Edge<T>> &edges, PropagationMode propagate)
+    DLState(DLStats &stats, const std::vector<Edge> &edges, PropagationMode propagate)
         : stats(stats)
         , dl_graph(stats, edges, propagate) { }
     DLStats &stats;
-    DifferenceLogicGraph<T> dl_graph;
+    DifferenceLogicGraph dl_graph;
     std::vector<literal_t> false_lits;
     std::vector<int> todo_edges;
 };
 
-template <typename T>
-T evaluate_binary(char const *op, T left, T right) {
+inline int evaluate_binary(char const *op, int left, int right) {
     if (std::strcmp(op, "+") == 0) {
         return left + right;
     }
@@ -881,7 +877,7 @@ T evaluate_binary(char const *op, T left, T right) {
         return left * right;
     }
     if (std::strcmp(op, "/") == 0) {
-        if (std::is_integral<T>::value && right == 0) {
+        if (right == 0) {
             throw std::runtime_error("could not evaluate term: division by zero");
         }
         return left / right;
@@ -889,17 +885,8 @@ T evaluate_binary(char const *op, T left, T right) {
     throw std::runtime_error("could not evaluate term: unknown binary operator");
 }
 
-template <typename T>
-Clingo::Symbol to_symbol(T value);
-
-template <>
 inline Clingo::Symbol to_symbol(int value) {
     return Number(value);
-}
-
-template <>
-inline Clingo::Symbol to_symbol(double value) {
-    return String(std::to_string(value).c_str());
 }
 
 struct NodeInfo {
@@ -918,11 +905,10 @@ inline bool is_valid_var(int var) {
 
 
 
-template <typename T>
 class DifferenceLogicPropagator : public Propagator {
 private:
 
-    using CoVarVec = std::vector<std::pair<T,int>>; // vector of coefficients and variables
+    using CoVarVec = std::vector<std::pair<int,int>>; // vector of coefficients and variables
 public:
     DifferenceLogicPropagator(Stats &stats, PropagatorConfig const &conf)
     : stats_(stats)
@@ -976,7 +962,7 @@ public:
         // the algorithm below adds clauses excluding such mutexes
         if (conf_.mutex_size > 0 && conf_.mutex_cutoff > 0) {
             struct State {
-                T weight;
+                int weight;
                 int id;
                 int n;
                 int previous;
@@ -1051,33 +1037,11 @@ public:
         initialize_states(init);
     }
 
-    template <class N, typename std::enable_if<std::is_integral<N>::value, int>::type = 0>
-    T round(double val) {
+    int round(double val) {
         if (ceilf(val) == val) {
-            return static_cast<T>(val);
+            return static_cast<int>(val);
         }
         throw std::runtime_error("could not evaluate term: for real numbers use option rdl");
-    }
-
-    template <class N, typename std::enable_if<std::is_floating_point<N>::value, int>::type = 0>
-    T round(T val) {
-        return static_cast<T>(val);
-    }
-
-
-    bool evaluate_real(char const *name, T &val) {
-        static const std::string chars = "\"";
-        auto len = std::strlen(name);
-        if (len < 2 || name[0] != '"' || name[len - 1] != '"') {
-            return false;
-        }
-        char *parsed = nullptr;
-        auto ret = std::strtod(name + 1, &parsed);
-        if (parsed != name + len - 1) {
-            return false;
-        }
-        val = round<T>(ret);
-        return true;
     }
 
     void parse_constraint_elem(Clingo::TheoryTerm const &term, CoVarVec &res) {
@@ -1128,13 +1092,8 @@ public:
             }
         }
         else if (term.type() == Clingo::TheoryTermType::Symbol) {
-            T val;
-            if (evaluate_real(term.name(), val)) {
-                res.emplace_back(val, INVALID_VAR);
-            }
-            else {
-                res.emplace_back(1, map_vert(evaluate(term)));
-            }
+            int val;
+            res.emplace_back(1, map_vert(evaluate(term)));
         }
         else if (term.type() == Clingo::TheoryTermType::Function || term.type() == Clingo::TheoryTermType::Tuple) {
             res.emplace_back(1, map_vert(evaluate(term)));
@@ -1144,9 +1103,9 @@ public:
         }
     }
 
-    T simplify(CoVarVec &vec) const {
+    int simplify(CoVarVec &vec) const {
         static thread_local std::unordered_map<int, typename CoVarVec::iterator> seen;
-        T rhs = 0;
+        int rhs = 0;
         seen.clear();
 
         auto jt = vec.begin();
@@ -1157,14 +1116,14 @@ public:
                 continue;
             }
             if (!is_valid_var(var)) {
-                rhs = safe_sub<T>(rhs, co);
+                rhs = safe_sub(rhs, co);
             }
             else {
                 auto r = seen.emplace(var, jt);
                 auto kt = r.first;
                 auto ins = r.second;
                 if (!ins) {
-                    kt->second->first = safe_add<T>(kt->second->first, co);
+                    kt->second->first = safe_add(kt->second->first, co);
                 }
                 else {
                     if (it != jt) {
@@ -1189,13 +1148,10 @@ public:
 
         auto term = atom.term();
         bool strict = (term.to_string() == "__diff_b");
-        if (strict && std::is_floating_point<T>::value) {
-            std::runtime_error("real difference logic not available with strict semantics in the body of a rule");
-        }
         CoVarVec covec;
         parse_constraint_elem(atom.guard().second, covec);
         for (auto it = covec.begin(), ie = covec.end(); it != ie; ++it) {
-            it->first = safe_inv<T>(it->first);
+            it->first = safe_inv(it->first);
         }
         auto rel = atom.guard().first;
 
@@ -1212,7 +1168,7 @@ public:
         normalize_constraint(init, lit, covec, rel, rhs, strict);
     }
 
-    bool add_edge(PropagateInit& init, int literal, CoVarVec const &covec, T rhs, bool strict) {
+    bool add_edge(PropagateInit& init, int literal, CoVarVec const &covec, int rhs, bool strict) {
         char const *msg = "parsing difference constraint failed: only constraints of form &diff {u - v} <= b are accepted";
         if (strict && init.assignment().is_false(literal)) {
             return true;
@@ -1258,14 +1214,14 @@ public:
         return true;
     }
 
-    void add_edge(PropagateInit& init, int u_id, int v_id, T weight, int lit, bool strict) {
+    void add_edge(PropagateInit& init, int u_id, int v_id, int weight, int lit, bool strict) {
         add_edge(init, u_id, v_id, weight, lit);
         if (strict) {
             add_edge(init, v_id, u_id, -weight-1, -lit);
         }
     }
 
-    void add_edge(PropagateInit &init, int u_id, int v_id, T weight, int lit) {
+    void add_edge(PropagateInit &init, int u_id, int v_id, int weight, int lit) {
         auto id = numeric_cast<int>(edges_.size());
         edges_.push_back({u_id, v_id, weight, lit});
         lit_to_edges_.emplace(lit, id);
@@ -1278,25 +1234,25 @@ public:
         }
     }
 
-    bool normalize_constraint(PropagateInit &init, int literal, CoVarVec const &elements, char const *op, T rhs, bool strict) {
+    bool normalize_constraint(PropagateInit &init, int literal, CoVarVec const &elements, char const *op, int rhs, bool strict) {
         CoVarVec copy;
         CoVarVec const *elems = &elements;
 
         // rewrite '>', '<', and '>=' into '<='
         if (std::strcmp(op, ">") == 0) {
             op = ">=";
-            rhs = safe_add<T>(rhs, epsilon<T>());
+            rhs = safe_add(rhs, epsilon());
         }
         else if (std::strcmp(op, "<") == 0) {
             op = "<=";
-            rhs = safe_sub<T>(rhs, epsilon<T>());
+            rhs = safe_sub(rhs, epsilon());
         }
         if (std::strcmp(op, ">=") == 0) {
             op = "<=";
-            rhs = safe_inv<T>(rhs);
+            rhs = safe_inv(rhs);
             copy.reserve(elements.size());
             for (auto const &covar : elements) {
-                copy.emplace_back(safe_inv<T>(covar.first), covar.second);
+                copy.emplace_back(safe_inv(covar.first), covar.second);
             }
             elems = &copy;
         }
@@ -1499,7 +1455,7 @@ public:
     // propagation
 
     void check(PropagateControl &ctl) override {
-        DLState<T> &state = states_[ctl.thread_id()];
+        DLState &state = states_[ctl.thread_id()];
         auto &facts = facts_[ctl.thread_id()];
         auto assignment = ctl.assignment();
         if (assignment.decision_level() == 0 && facts.limit > 0) {
@@ -1519,7 +1475,7 @@ public:
 #endif
     }
 
-    void disable_edge_by_lit(DLState<T> &state, literal_t lit) {
+    void disable_edge_by_lit(DLState &state, literal_t lit) {
         for (auto it = false_lit_to_edges_.find(lit), ie = false_lit_to_edges_.end(); it != ie && it->first == lit; ++it) {
             if (state.dl_graph.edge_is_active(it->second)) {
                 state.dl_graph.remove_candidate_edge(it->second);
@@ -1527,15 +1483,15 @@ public:
         }
     }
 
-    int get_potential_(DifferenceLogicGraph<T> const &graph, int idx) {
+    int get_potential_(DifferenceLogicGraph const &graph, int idx) {
         return graph.node_value_defined(idx) ? -graph.node_value(idx) : 0;
     };
 
-    int cost_(DifferenceLogicGraph<T> const &graph, Edge<T> const &edge) {
+    int cost_(DifferenceLogicGraph const &graph, Edge const &edge) {
         return get_potential_(graph, edge.from) + edge.weight - get_potential_(graph, edge.to);
     };
 
-    int cost_(SortMode mode, DifferenceLogicGraph<T> const &graph, int i) {
+    int cost_(SortMode mode, DifferenceLogicGraph const &graph, int i) {
         switch(mode) {
             case SortMode::Weight: {
                 return edges_[i].weight;
@@ -1556,7 +1512,7 @@ public:
         return 0;
     }
 
-    void sort_edges(SortMode mode, DLState<T> &state) {
+    void sort_edges(SortMode mode, DLState &state) {
         std::sort(state.todo_edges.begin(), state.todo_edges.end(), [&](int l, int r) {
             return cost_(mode, state.dl_graph, l) < cost_(mode, state.dl_graph, r);
         });
@@ -1564,7 +1520,7 @@ public:
 
     void do_propagate(PropagateControl &ctl, LiteralSpan changes) {
         auto thread_id = ctl.thread_id();
-        DLState<T> &state = states_[thread_id];
+        DLState &state = states_[thread_id];
         Timer t{state.stats.time_propagate};
         auto level = ctl.assignment().decision_level();
         state.dl_graph.ensure_decision_level(level);
@@ -1624,7 +1580,7 @@ public:
 
     void extend_model(Model &model) {
         auto &state = states_[model.thread_id()];
-        std::vector<T> adjust;
+        std::vector<int> adjust;
         adjust.reserve(zero_nodes_.size());
         for (auto node : zero_nodes_) {
             adjust.emplace_back(state.dl_graph.has_value(node) ? state.dl_graph.node_value(node) : 0);
@@ -1636,7 +1592,7 @@ public:
                 SymbolVector params;
                 params.emplace_back(vert_map_[idx]);
                 auto cc = node_info_[idx].cc;
-                params.emplace_back(to_symbol<T>(state.dl_graph.node_value(idx) - adjust[cc]));
+                params.emplace_back(to_symbol(state.dl_graph.node_value(idx) - adjust[cc]));
                 vec.emplace_back(Function("dl", params));
             }
         }
@@ -1662,10 +1618,10 @@ public:
         return index < vert_map_.size() && !is_zero(index) && states_[thread_id].dl_graph.has_value(index);
     }
 
-    T lower_bound(uint32_t thread_id, size_t index) const {
+    int lower_bound(uint32_t thread_id, size_t index) const {
         assert(has_lower_bound(thread_id, index));
         auto &state = states_[thread_id];
-        T adjust = 0;
+        int adjust = 0;
         auto cc = node_info_[index].cc;
         auto zero_node = zero_nodes_[cc];
 
@@ -1676,45 +1632,27 @@ public:
     }
 private:
 
-    T to_T(Clingo::Symbol const &a) const {
+    int to_int(Clingo::Symbol const &a) const {
         if (a.type() == Clingo::SymbolType::Number) {
-            return static_cast<T>(a.number());
+            return static_cast<int>(a.number());
         }
         if (a.type() == Clingo::SymbolType::String) {
             return std::stod(a.string());
         }
-        return throw_syntax_error<T>();
+        return throw_syntax_error<int>();
     }
 
-    template <class F, class N, typename std::enable_if<std::is_integral<N>::value, int>::type = 0>
+    template <class F>
     Clingo::Symbol evaluate(Clingo::TheoryTerm const &a, Clingo::TheoryTerm const &b, F f) const {
         auto ea = evaluate(a);
         check_syntax(ea.type() == Clingo::SymbolType::Number);
         auto eb = evaluate(b);
         check_syntax(eb.type() == Clingo::SymbolType::Number);
-        return Clingo::Number(f(to_T(ea), to_T(eb)));
+        return Clingo::Number(f(to_int(ea), to_int(eb)));
     }
 
-    template <class F, class N, typename std::enable_if<std::is_floating_point<N>::value, int>::type = 0>
-    Clingo::Symbol evaluate(Clingo::TheoryTerm const &a, Clingo::TheoryTerm const &b, F f) const {
-        auto ea = evaluate(a);
-        auto eb = evaluate(b);
-        return Clingo::String(std::to_string(f(to_T(ea), to_T(eb))).c_str());
-    }
-
-    template <class F>
-    Clingo::Symbol evaluate(Clingo::TheoryTerm const &a, Clingo::TheoryTerm const &b, F &&f) const {
-        return evaluate<F, T>(a, b, std::forward<F>(f));
-    }
-
-    template <class N, typename std::enable_if<std::is_integral<N>::value, int>::type = 0>
-    T epsilon() const {
+    int epsilon() const {
         return 1;
-    }
-
-    template <class N, typename std::enable_if<std::is_floating_point<N>::value, int>::type = 0>
-    T epsilon() const {
-        return 0.00001;
     }
 
     Clingo::Symbol evaluate(Clingo::TheoryTerm const &term) const {
@@ -1727,22 +1665,22 @@ private:
         }
 
         if (match(term, "+", 2)) {
-            return evaluate(term.arguments().front(), term.arguments().back(), safe_add<T>);
+            return evaluate(term.arguments().front(), term.arguments().back(), safe_add);
         }
         if (match(term, "-", 2)) {
-            return evaluate(term.arguments().front(), term.arguments().back(), safe_sub<T>);
+            return evaluate(term.arguments().front(), term.arguments().back(), safe_sub);
         }
         if (match(term, "*", 2)) {
-            return evaluate(term.arguments().front(), term.arguments().back(), safe_mul<T>);
+            return evaluate(term.arguments().front(), term.arguments().back(), safe_mul);
         }
         if (match(term, "/", 2)) {
-            return evaluate(term.arguments().front(), term.arguments().back(), safe_div<T>);
+            return evaluate(term.arguments().front(), term.arguments().back(), safe_div);
         }
         if (match(term, "\\", 2)) {
-            return evaluate(term.arguments().front(), term.arguments().back(), safe_mod<T>);
+            return evaluate(term.arguments().front(), term.arguments().back(), safe_mod);
         }
         if (match(term, "**", 2)) {
-            return evaluate(term.arguments().front(), term.arguments().back(), safe_pow<T>);
+            return evaluate(term.arguments().front(), term.arguments().back(), safe_pow);
         }
 
         if (match(term, "-", 1)) {
@@ -1771,11 +1709,11 @@ private:
 
 private:
 
-    std::vector<DLState<T>> states_;
+    std::vector<DLState> states_;
     std::vector<FactState> facts_;
     std::unordered_multimap<literal_t, int> lit_to_edges_;
     std::unordered_multimap<literal_t, int> false_lit_to_edges_;
-    std::vector<Edge<T>> edges_;
+    std::vector<Edge> edges_;
     std::vector<Clingo::Symbol> vert_map_;
     std::unordered_map<Clingo::Symbol, int> vert_map_inv_;
     std::vector<NodeInfo> node_info_;
