@@ -140,7 +140,6 @@ TEST_CASE("solving", "[clingo]") {
         }
 
         SECTION("configure") {
-            REQUIRE(clingodl_configure(theory, "propagate", "full"));
             REQUIRE(clingodl_register(theory, ctl.to_c()));
 
             parse_program(theory, ctl,

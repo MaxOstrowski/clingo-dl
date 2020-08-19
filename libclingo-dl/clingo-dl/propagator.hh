@@ -130,9 +130,6 @@ struct DLStats {
         time_dijkstra  = std::chrono::steady_clock::duration::zero();
         true_edges            = 0;
         false_edges           = 0;
-        false_edges_trivial   = 0;
-        false_edges_weak      = 0;
-        false_edges_weak_plus = 0;
         propagate_cost_add  = 0;
         propagate_cost_from = 0;
         propagate_cost_to   = 0;
@@ -146,9 +143,6 @@ struct DLStats {
         time_dijkstra += x.time_dijkstra;
         true_edges    += x.true_edges;
         false_edges   += x.false_edges;
-        false_edges_trivial  += x.false_edges_trivial;
-        false_edges_weak     += x.false_edges_weak;
-        false_edges_weak_plus+= x.false_edges_weak_plus;
         propagate_cost_add += x.propagate_cost_add;
         propagate_cost_from+= x.propagate_cost_from;
         propagate_cost_to  += x.propagate_cost_to;
@@ -161,9 +155,6 @@ struct DLStats {
     Duration time_dijkstra = Duration{0};
     uint64_t true_edges{0};
     uint64_t false_edges{0};
-    uint64_t false_edges_trivial{0};
-    uint64_t false_edges_weak{0};
-    uint64_t false_edges_weak_plus{0};
     uint64_t propagate_cost_add{0};
     uint64_t propagate_cost_from{0};
     uint64_t propagate_cost_to{0};
@@ -178,12 +169,10 @@ struct EdgeState {
     uint8_t active : 1;
 };
 
-enum class PropagationMode { Check = 0, Trivial = 1, Weak = 2, WeakPlus = 3, Strong = 4 };
+enum class PropagationMode { Check = 0 };
 enum class SortMode { No = 0, Weight = 1, WeightRev = 2, Potential = 3 , PotentialRev = 4};
 
 struct ThreadConfig {
-    std::pair<bool,uint64_t> propagate_root{false,0};
-    std::pair<bool,uint64_t> propagate_budget{false,0};
     std::pair<bool,PropagationMode> mode{false,PropagationMode::Check};
     std::pair<bool,SortMode> sort_edges{false,SortMode::Weight};
 };
@@ -192,23 +181,9 @@ struct PropagatorConfig {
     SortMode sort_edges{SortMode::Weight};
     uint64_t mutex_size{0};
     uint64_t mutex_cutoff{10};
-    uint64_t propagate_root{0};
-    uint64_t propagate_budget{0};
     PropagationMode mode{PropagationMode::Check};
     std::vector<ThreadConfig> thread_config;
 
-    uint64_t get_propagate_root(id_t thread_id) {
-        if (thread_id < thread_config.size() && thread_config[thread_id].propagate_root.first) {
-            return thread_config[thread_id].propagate_root.second;
-        }
-        return propagate_root;
-    }
-    uint64_t get_propagate_budget(id_t thread_id) {
-        if (thread_id < thread_config.size() && thread_config[thread_id].propagate_budget.first) {
-            return thread_config[thread_id].propagate_budget.second;
-        }
-        return propagate_budget;
-    }
     PropagationMode get_propagate_mode(id_t thread_id) {
         if (thread_id < thread_config.size() && thread_config[thread_id].mode.first) {
             return thread_config[thread_id].mode.second;
@@ -268,10 +243,10 @@ public:
         std::get<4>(changed_trail_.back()) = false;
     }
 
-    void ensure_decision_level(int level, bool enable_propagate) {
+    void ensure_decision_level(int level) {
         // initialize the trail
         if (changed_trail_.empty() || static_cast<int>(std::get<0>(changed_trail_.back())) < level) {
-            bool can_propagate = (changed_trail_.empty() || std::get<4>(changed_trail_.back())) && enable_propagate;
+            bool can_propagate = changed_trail_.empty();
             changed_trail_.emplace_back(level, static_cast<int>(changed_nodes_.size()),
                                                static_cast<int>(changed_edges_.size()),
                                                static_cast<int>(inactive_edges_.size()),
@@ -308,45 +283,6 @@ public:
         }
         in.erase(jt, in.end());
         return true;
-    }
-
-    template <class F>
-    bool cheap_propagate(int u_idx, int s_idx, F f) {
-        // we check for the following case:
-        // u ->* s -> * t
-        //       ^-----/
-        //          ts
-        return with_incoming(s_idx, f, [&](int t_idx, int ts_idx) {
-            auto &s = nodes_[s_idx];
-            auto &t = nodes_[t_idx];
-            auto &ts = edges_[ts_idx];
-            if (s.visited_from < t.visited_from) {
-                T weight = t.potential() - s.potential();
-                if (weight + ts.weight < 0) {
-                    T check = 0;
-                    auto r_idx = t_idx;
-                    while (u_idx != r_idx && s_idx != r_idx) {
-                        auto &r = nodes_[r_idx];
-                        auto &rr = edges_[r.path_from];
-                        neg_cycle.emplace_back(r.path_from);
-                        r_idx = rr.from;
-                        check += rr.weight;
-                    }
-                    if (r_idx == s_idx) {
-                        if (u_idx == s_idx) {
-                            ++stats_.false_edges_weak;
-                        }
-                        else {
-                            ++stats_.false_edges_weak_plus;
-                        }
-                        assert(weight == check);
-                        neg_cycle.emplace_back(ts_idx);
-                        return true;
-                    }
-                }
-            }
-            return false;
-        });
     }
 
     template <class F>
@@ -446,31 +382,6 @@ public:
             consistent = f(neg_cycle);
         }
 
-        if (propagate_ >= PropagationMode::Trivial && consistent) {
-            if (visited_from_.empty() || propagate_ == PropagationMode::Trivial) {
-                consistent = with_incoming(uv.from, f, [&](int t_idx, int ts_idx) {
-                    auto &ts = edges_[ts_idx];
-                    if (t_idx == uv.to && uv.weight + ts.weight < 0) {
-                        neg_cycle.emplace_back(uv_idx);
-                        neg_cycle.emplace_back(ts_idx);
-                        ++stats_.false_edges_trivial;
-                        return true;
-                    }
-                    return false;
-                });
-            }
-            else if (propagate_ >= PropagationMode::Weak) {
-                consistent = cheap_propagate(uv.from, uv.from, f);
-                if (propagate_ >= PropagationMode::WeakPlus && consistent) {
-                    for (auto &s_idx : visited_from_) {
-                        if (!cheap_propagate(uv.from, s_idx, f)) {
-                            consistent = false;
-                            break;
-                        }
-                    }
-                }
-            }
-        }
         // reset visited flags
         for (auto &x : visited_from_) {
             nodes_[x].visited_from = 0;
@@ -949,17 +860,13 @@ struct FactState {
 
 template <typename T>
 struct DLState {
-    DLState(DLStats &stats, const std::vector<Edge<T>> &edges, PropagationMode propagate, uint64_t propagate_root, uint64_t propagate_budget)
+    DLState(DLStats &stats, const std::vector<Edge<T>> &edges, PropagationMode propagate)
         : stats(stats)
-        , dl_graph(stats, edges, propagate)
-        , propagate_root{propagate_root}
-        , propagate_budget{propagate_budget} { }
+        , dl_graph(stats, edges, propagate) { }
     DLStats &stats;
     DifferenceLogicGraph<T> dl_graph;
     std::vector<literal_t> false_lits;
     std::vector<int> todo_edges;
-    uint64_t propagate_root;
-    uint64_t propagate_budget;
 };
 
 template <typename T>
@@ -1365,10 +1272,6 @@ public:
         bool add = false;
         for (int i = 0; i < init.number_of_threads(); ++i) {
             init.add_watch(lit, i);
-            if (conf_.get_propagate_mode(i) >= PropagationMode::Strong || conf_.get_propagate_root(i) > 0 || conf_.get_propagate_budget(i) > 0) {
-                add = true;
-                init.add_watch(-lit, i);
-            }
         }
         if (add) {
             false_lit_to_edges_.emplace(-lit, id);
@@ -1588,7 +1491,7 @@ public:
             facts_.resize(init.number_of_threads());
         }
         for (int i = 0; i < init.number_of_threads(); ++i) {
-            states_.emplace_back(stats_.dl_stats[i], edges_, conf_.get_propagate_mode(i), conf_.get_propagate_root(i), conf_.get_propagate_budget(i));
+            states_.emplace_back(stats_.dl_stats[i], edges_, conf_.get_propagate_mode(i));
             facts_[i].limit = facts_[i].lits.size();
         }
     }
@@ -1664,8 +1567,7 @@ public:
         DLState<T> &state = states_[thread_id];
         Timer t{state.stats.time_propagate};
         auto level = ctl.assignment().decision_level();
-        bool enable_propagate = state.dl_graph.mode() >= PropagationMode::Strong || level < state.propagate_root || state.propagate_budget > 0;
-        state.dl_graph.ensure_decision_level(level, enable_propagate);
+        state.dl_graph.ensure_decision_level(level);
         if (state.dl_graph.can_propagate()) {
             for (auto &lit : state.false_lits) {
                 if (ctl.assignment().is_true(lit)) { disable_edge_by_lit(state, lit); }
@@ -1698,14 +1600,7 @@ public:
                     return ctl.add_clause(clause) && ctl.propagate();
                 });
                 if (!ret) { return; }
-                bool propagate = (state.dl_graph.mode() >= PropagationMode::Strong) ||
-                    (level < state.propagate_root) || (
-                        state.propagate_budget > 0 &&
-                        state.dl_graph.can_propagate() &&
-                        state.stats.propagate_cost_add + state.propagate_budget > state.stats.propagate_cost_from + state.stats.propagate_cost_to);
-                if (!propagate) { state.dl_graph.disable_propagate(); }
-                // if !propgate -> can no longer propagate!
-                if (propagate && !state.dl_graph.propagate(edge, ctl)) { return; }
+                state.dl_graph.disable_propagate();
             }
         }
     }

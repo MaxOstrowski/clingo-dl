@@ -189,9 +189,6 @@ term {
             thread.add_subkey("Undo(s)", StatisticsType::Value).set_value(stat.time_undo.count());
             thread.add_subkey("True edges", StatisticsType::Value).set_value(stat.true_edges);
             thread.add_subkey("False edges", StatisticsType::Value).set_value(stat.false_edges);
-            thread.add_subkey("False edges (inverse)", StatisticsType::Value).set_value(stat.false_edges_trivial);
-            thread.add_subkey("False edges (partial)", StatisticsType::Value).set_value(stat.false_edges_weak);
-            thread.add_subkey("False edges (partial+)", StatisticsType::Value).set_value(stat.false_edges_weak_plus);
             thread.add_subkey("Edges added", StatisticsType::Value).set_value(stat.edges_added);
             thread.add_subkey("Edges skipped", StatisticsType::Value).set_value(stat.edges_skipped);
             thread.add_subkey("Edges propagated", StatisticsType::Value).set_value(stat.edges_propagated);
@@ -309,18 +306,6 @@ bool set_config(char const *value, void *data, F f, G g) {
     return false;
 }
 
-static bool parse_root(const char *value, void *data) {
-    uint64_t x = 0;
-    return (value = parse_uint64_pre(value, &x)) && set_config(value, data,
-        [x](PropagatorConfig &config) { config.propagate_root = x; },
-        [x](ThreadConfig &config) { config.propagate_root = {true, x}; });
-}
-static bool parse_budget(const char *value, void *data) {
-    uint64_t x = 0;
-    return (value = parse_uint64_pre(value, &x)) && set_config(value, data,
-        [x](PropagatorConfig &config) { config.propagate_budget = x; },
-        [x](ThreadConfig &config) { config.propagate_budget = {true, x}; });
-}
 static bool parse_mutex(const char *value, void *data) {
     auto &pc = *static_cast<PropagatorConfig*>(data);
     uint64_t x = 0;
@@ -341,18 +326,6 @@ static bool parse_mode(const char *value, void *data) {
     char const *rem = nullptr;
     if ((rem = iequals_pre(value, "no"))) {
         mode = PropagationMode::Check;
-    }
-    else if ((rem = iequals_pre(value, "inverse"))) {
-        mode = PropagationMode::Trivial;
-    }
-    else if ((rem = iequals_pre(value, "partial+"))) {
-        mode = PropagationMode::WeakPlus;
-    }
-    else if ((rem = iequals_pre(value, "partial"))) {
-        mode = PropagationMode::Weak;
-    }
-    else if ((rem = iequals_pre(value, "full"))) {
-        mode = PropagationMode::Strong;
     }
     return rem && set_config(rem, data,
         [mode](PropagatorConfig &config) { config.mode = mode; },
@@ -408,12 +381,6 @@ extern "C" bool clingodl_configure(clingodl_theory_t *theory, char const *key, c
         if (strcmp(key, "propagate") == 0) {
             return check_parse("propagate", parse_mode(value, &theory->config));
         }
-        if (strcmp(key, "propagate-root") == 0) {
-            return check_parse("propagate-root", parse_root(value, &theory->config));
-        }
-        if (strcmp(key, "propagate-budget") == 0) {
-            return check_parse("propgate-budget", parse_budget(value, &theory->config));
-        }
         if (strcmp(key, "add-mutexes") == 0) {
             return check_parse("add-mutexes", parse_mutex(value, &theory->config));
         }
@@ -444,19 +411,6 @@ extern "C" bool clingodl_register_options(clingodl_theory_t *theory, clingo_opti
             "        full    : Detect all conflicting constraints\n"
             "      <thread>: Restrict to thread",
             &parse_mode, &theory->config, true, "<mode>"));
-        CLINGO_CALL(clingo_options_add(options, group, "propagate-root",
-            "Enable full propagation below decision level [0]\n"
-            "      <arg>   : <n>[,<thread>]\n"
-            "      <n>     : Upper bound for decision level\n"
-            "      <thread>: Restrict to thread",
-            &parse_root, &theory->config, true, "<arg>"));
-        CLINGO_CALL(clingo_options_add(options, group, "propagate-budget",
-            "Enable full propagation limiting to budget [0]\n"
-            "      <arg>   : <n>[,<thread>]\n"
-            "      <n>     : Budget roughly corresponding to cost of consistency checks\n"
-            "                (if possible use with --propagate-root greater 0)\n"
-            "      <thread>: Restrict to thread",
-            &parse_budget, &theory->config, true, "<arg>"));
         CLINGO_CALL(clingo_options_add(options, group, "add-mutexes",
             "Add mutexes in a preprocessing step [0]\n"
             "      <arg>   : <max>[,<cut>]\n"
